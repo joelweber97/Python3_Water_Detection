@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from patchify import patchify, unpatchify
 import os
 os.environ["SM_FRAMEWORK"] = "tf.keras"
-
+import math
 from tensorflow.keras.utils import to_categorical
 
 import segmentation_models as sm
@@ -18,7 +18,12 @@ from random import randint
 
 
 
+
+
 naip_img = rio.open('naip22-nc-cir-60cm_2896204_20220528.tif')
+#i think we need to window this dataset down to the actual output size.
+
+
 profile = naip_img.profile
 prj = naip_img.crs
 gt = naip_img.transform
@@ -36,23 +41,26 @@ del(naip1, naip2, naip3, naip4)
 
 
 patch_size = 256
-naip.shape[0]/256
-naip.shape[1]/256
-#50 patches x 44 patches
-256 * 50
-256 * 44
 
-#naip = naip[:12800,:11264,:]
+y = math.ceil(naip.shape[0]/patch_size)
+x = math.ceil(naip.shape[1]/patch_size)
+
+y = y * patch_size
+x = x * patch_size
+
+z = np.zeros(shape = (y, x, naip.shape[2]))
+print(z.shape)
+
+z[:naip.shape[0], :naip.shape[1], :] = naip
+z.shape
 
 
-naip_patches = patchify(naip, (patch_size, patch_size, 4), step=patch_size) #Step=256 for 256 patches means no overlap
+#naip_patches = patchify(naip, (patch_size, patch_size, 4), step=patch_size) #Step=256 for 256 patches means no overlap
+naip_patches = patchify(z, (patch_size, patch_size, 4), step=patch_size) #Step=256 for 256 patches means no overlap
 
 naip_patches = naip_patches[:,:,0,:,:,:]
 
 naip_patches = naip_patches/255.
-
-
-
 
 
 import segmentation_models as sm
@@ -84,13 +92,17 @@ patched_prediction = np.array(patched_prediction)
 patched_prediction = np.reshape(patched_prediction, [naip_patches.shape[0], naip_patches.shape[1], 
                                             naip_patches.shape[2], naip_patches.shape[3]])
 
-unpatched_prediction = unpatchify(patched_prediction, (naip.shape[0], naip.shape[1]))
 
 
+
+unpatched_prediction = unpatchify(patched_prediction, (z.shape[0], z.shape[1]))
+
+unpatched_pred = unpatched_prediction[:naip.shape[0], :naip.shape[1]]
+
+#unpatched_pred = np.expand_dims(unpatched_pred, axis = -1)
 
 profile['count'] = 1
-profile['width'] = 11264
-profile['height'] = 12800
 
-with rio.open('up_with_project.tif', 'w', **profile) as dst:
-    dst.write(unpatched_prediction)
+with rio.open('up_with_projection.tif', 'w', **profile) as dst:
+    dst.write(unpatched_pred, 1)
+
