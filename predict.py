@@ -106,3 +106,6 @@ profile['count'] = 1
 with rio.open('up_with_projection.tif', 'w', **profile) as dst:
     dst.write(unpatched_pred, 1)
 
+
+
+#faily decent predictions to this point.
