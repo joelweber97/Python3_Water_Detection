@@ -18,8 +18,8 @@ from random import randint
 
 
 
-
 naip_img = rio.open('naip22-nc-cir-60cm_2896204_20220528.tif')
+profile = naip_img.profile
 prj = naip_img.crs
 gt = naip_img.transform
 print(naip_img.shape)
@@ -32,6 +32,7 @@ naip3 = naip_img.read(3)
 naip4 = naip_img.read(4)
 
 naip = np.dstack((naip1,naip2,naip3,naip4))
+del(naip1, naip2, naip3, naip4)
 
 
 patch_size = 256
@@ -41,15 +42,14 @@ naip.shape[1]/256
 256 * 50
 256 * 44
 
-naip = naip[:12800,:11264,:]
+#naip = naip[:12800,:11264,:]
 
 
 naip_patches = patchify(naip, (patch_size, patch_size, 4), step=patch_size) #Step=256 for 256 patches means no overlap
 
-naip_patches = naip_patches.reshape(2200, 256, 256, 4)
+naip_patches = naip_patches[:,:,0,:,:,:]
 
 naip_patches = naip_patches/255.
-
 
 
 
@@ -66,29 +66,31 @@ model = tf.keras.models.load_model('test.h5', custom_objects = {'dice_loss_plus_
 
 
 
-preds = []
-count = 0
-for i in naip_patches:
-    plt.imsave(f'original_images/image{count}.png', i)
-    pred = np.argmax(model.predict(np.expand_dims(i, axis = 0)), axis = -1).reshape(256,256)
-    plt.imsave(f'predicted_images/image{count}.png', pred)
-    preds.append(pred)
-    count +=1
+patched_prediction = []
+for i in range(naip_patches.shape[0]):
+    for j in range(naip_patches.shape[1]):
+        
+        single_patch_img = naip_patches[i,j,:,:,:]
+        #print(single_patch_img.shape)
+        #Use minmaxscaler instead of just dividing by 255. 
+        #single_patch_img = scaler.fit_transform(single_patch_img.reshape(-1, single_patch_img.shape[-1])).reshape(single_patch_img.shape)
+        single_patch_img = np.expand_dims(single_patch_img, axis=0)
+        pred = model.predict(single_patch_img)
+        pred = np.argmax(pred, axis=3)
+        pred = pred[0, :,:]         
+        patched_prediction.append(pred)
+
+patched_prediction = np.array(patched_prediction)
+patched_prediction = np.reshape(patched_prediction, [naip_patches.shape[0], naip_patches.shape[1], 
+                                            naip_patches.shape[2], naip_patches.shape[3]])
+
+unpatched_prediction = unpatchify(patched_prediction, (naip.shape[0], naip.shape[1]))
 
 
-'''
-preds = np.array(preds)
 
+profile['count'] = 1
+profile['width'] = 11264
+profile['height'] = 12800
 
-preds = preds.reshape(50,44,256,256)
-
-
-del(naip_patches)
-del(naip)
-del(model)
-
-
-up = unpatchify(preds, (12800, 11264))
-del(preds)
-
-'''
+with rio.open('up_with_project.tif', 'w', **profile) as dst:
+    dst.write(unpatched_prediction)
